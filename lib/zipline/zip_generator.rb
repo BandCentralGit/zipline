@@ -1,3 +1,5 @@
+require 'net/http'
+require 'openssl'
 # this class acts as a streaming body for rails
 # initialize it with an array of the files you want to zip
 module Zipline
@@ -52,15 +54,28 @@ module Zipline
         while buffer = file.read(2048)
           zip << buffer
         end
-      else
-        the_remote_url = file.url(Time.now + 1.minutes)
-        c = Curl::Easy.new(the_remote_url) do |curl|
-          curl.on_body do |data|
-            zip << data
-            data.bytesize
+      else        
+        ## Ruby 2.1.1 Segfaults on https urls
+        ## Carrier file.url(Time.now + 1.minutes) => TypeError: no implicit conversion of Time into Hash
+        uri = URI(file.url)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true 
+        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+        request = Net::HTTP::Get.new(uri.request_uri)
+        http.request request do |response|
+          response.read_body do |chunk|
+            zip << chunk
           end
         end
-        c.perform
+
+        # the_remote_url = file.url(Time.now + 1.minutes)
+        # c = Curl::Easy.new(the_remote_url) do |curl|
+        #   curl.on_body do |data|
+        #     zip << data
+        #     data.bytesize
+        #   end
+        # end
+        # c.perform
       end
     end
 
